@@ -37,26 +37,20 @@ async function syncPayments() {
     const memo = tx.memo;
     if (!memo) continue;
 
-    const exists = await Payment.findOne({ txHash: tx.hash });
-    if (exists) continue;
-
     const ops = await tx.operations();
     const payOp = ops.records.find(op => op.type === 'payment' && op.to === SCHOOL_WALLET);
     if (!payOp) continue;
 
-    // Detect asset type and reject unsupported assets
     const asset = detectAsset(payOp);
-    if (!asset) continue; // skip unsupported assets
+    if (!asset) continue;
 
     const student = await Student.findOne({ studentId: memo });
     if (!student) continue;
 
-    const paymentAmount = parseFloat(payOp.amount);
-
-    // Validate payment amount against the student's defined fee
+    const paymentAmount = normalizeAmount(payOp.amount);
     const feeValidation = validatePaymentAgainstFee(paymentAmount, student.feeAmount);
 
-    await Payment.create({
+    await recordPayment({
       studentId: memo,
       txHash: tx.hash,
       amount: paymentAmount,
@@ -66,10 +60,33 @@ async function syncPayments() {
       confirmedAt: new Date(tx.created_at),
     });
 
-    // Only mark as paid if the payment meets or exceeds the required fee
     if (feeValidation.status === 'valid' || feeValidation.status === 'overpaid') {
       await Student.findOneAndUpdate({ studentId: memo }, { feePaid: true });
     }
+  }
+}
+
+/**
+ * Persist a payment record, enforcing uniqueness on txHash.
+ * Returns the saved document, or throws DUPLICATE_TX if already recorded.
+ */
+async function recordPayment(data) {
+  const exists = await Payment.findOne({ txHash: data.txHash });
+  if (exists) {
+    const err = new Error(`Transaction ${data.txHash} has already been processed`);
+    err.code = 'DUPLICATE_TX';
+    throw err;
+  }
+  try {
+    return await Payment.create(data);
+  } catch (e) {
+    // Catch race-condition duplicate key errors from MongoDB
+    if (e.code === 11000) {
+      const err = new Error(`Transaction ${data.txHash} has already been processed`);
+      err.code = 'DUPLICATE_TX';
+      throw err;
+    }
+    throw e;
   }
 }
 
@@ -157,4 +174,4 @@ function validatePaymentAgainstFee(paymentAmount, expectedFee) {
   };
 }
 
-module.exports = { syncPayments, verifyTransaction, validatePaymentAgainstFee };
+module.exports = { syncPayments, verifyTransaction, validatePaymentAgainstFee, recordPayment };

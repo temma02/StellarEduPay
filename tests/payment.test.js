@@ -47,6 +47,7 @@ jest.mock('../backend/src/services/stellarService', () => ({
     feeValidation: { status: 'valid', message: 'Payment matches the required fee' },
     date: new Date().toISOString(),
   }),
+  recordPayment: jest.fn().mockResolvedValue({}),
 }));
 
 describe('Payment API', () => {
@@ -66,6 +67,14 @@ describe('Payment API', () => {
     expect(res.body).toHaveProperty('hash', 'abc123');
     expect(res.body).toHaveProperty('feeAmount', 200);
     expect(res.body.feeValidation).toHaveProperty('status', 'valid');
+  });
+
+  test('POST /api/payments/verify returns 409 for duplicate transaction', async () => {
+    const Payment = require('../backend/src/models/paymentModel');
+    Payment.findOne.mockResolvedValueOnce({ txHash: 'abc123' });
+    const res = await request(app).post('/api/payments/verify').send({ txHash: 'abc123' });
+    expect(res.status).toBe(409);
+    expect(res.body).toHaveProperty('code', 'DUPLICATE_TX');
   });
 
   test('POST /api/payments/sync returns success message', async () => {

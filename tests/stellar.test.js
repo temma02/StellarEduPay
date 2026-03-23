@@ -1,4 +1,4 @@
-const { verifyTransaction, syncPayments, validatePaymentAgainstFee } = require('../backend/src/services/stellarService');
+const { verifyTransaction, syncPayments, validatePaymentAgainstFee, recordPayment } = require('../backend/src/services/stellarService');
 
 // Base mock transaction factory
 function makeTx(overrides = {}) {
@@ -54,7 +54,6 @@ jest.mock('../backend/src/models/paymentModel', () => ({
   create: jest.fn().mockResolvedValue({}),
   find: jest.fn().mockReturnValue({ sort: jest.fn().mockResolvedValue([]) }),
 }));
-
 jest.mock('../backend/src/models/studentModel', () => ({
   findOne: jest.fn().mockResolvedValue({ studentId: 'STU001', feeAmount: 200 }),
   findOneAndUpdate: jest.fn().mockResolvedValue({}),
@@ -142,5 +141,32 @@ describe('validatePaymentAgainstFee', () => {
 
   test('returns overpaid when payment exceeds fee', () => {
     expect(validatePaymentAgainstFee(250, 200).status).toBe('overpaid');
+  });
+});
+
+describe('recordPayment', () => {
+  const Payment = require('../backend/src/models/paymentModel');
+
+  const paymentData = { studentId: 'STU001', txHash: 'abc123', amount: 200, feeAmount: 200, feeValidationStatus: 'valid', memo: 'STU001', confirmedAt: new Date() };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  test('saves payment when txHash is new', async () => {
+    Payment.findOne.mockResolvedValueOnce(null);
+    await expect(recordPayment(paymentData)).resolves.toBeDefined();
+    expect(Payment.create).toHaveBeenCalledWith(paymentData);
+  });
+
+  test('throws DUPLICATE_TX when txHash already exists', async () => {
+    Payment.findOne.mockResolvedValueOnce({ txHash: 'abc123' });
+    await expect(recordPayment(paymentData)).rejects.toMatchObject({ code: 'DUPLICATE_TX' });
+    expect(Payment.create).not.toHaveBeenCalled();
+  });
+
+  test('throws DUPLICATE_TX on MongoDB duplicate key error (race condition)', async () => {
+    Payment.findOne.mockResolvedValueOnce(null);
+    const mongoErr = Object.assign(new Error('E11000'), { code: 11000 });
+    Payment.create.mockRejectedValueOnce(mongoErr);
+    await expect(recordPayment(paymentData)).rejects.toMatchObject({ code: 'DUPLICATE_TX' });
   });
 });

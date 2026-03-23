@@ -1,5 +1,5 @@
 const Payment = require('../models/paymentModel');
-const { syncPayments, verifyTransaction } = require('../services/stellarService');
+const { syncPayments, verifyTransaction, recordPayment } = require('../services/stellarService');
 const { SCHOOL_WALLET, ACCEPTED_ASSETS } = require('../config/stellarConfig');
 
 // GET /api/payments/instructions/:studentId
@@ -26,16 +26,39 @@ async function verifyPayment(req, res) {
   try {
     const { txHash } = req.body;
     if (!txHash) return res.status(400).json({ error: 'txHash is required' });
+
+    // Reject duplicates before hitting the Stellar network
+    const existing = await Payment.findOne({ txHash });
+    if (existing) {
+      return res.status(409).json({
+        error: `Transaction ${txHash} has already been processed`,
+        code: 'DUPLICATE_TX',
+      });
+    }
+
     const result = await verifyTransaction(txHash);
+
+    // Persist the verified payment
+    await recordPayment({
+      studentId: result.memo,
+      txHash: result.hash,
+      amount: result.amount,
+      feeAmount: result.feeAmount,
+      feeValidationStatus: result.feeValidation.status,
+      memo: result.memo,
+      confirmedAt: new Date(result.date),
+    });
+
     res.json(result);
   } catch (err) {
-    const clientErrors = {
+    const statusMap = {
       TX_FAILED: 400,
       MISSING_MEMO: 400,
       INVALID_DESTINATION: 400,
       UNSUPPORTED_ASSET: 400,
+      DUPLICATE_TX: 409,
     };
-    const status = clientErrors[err.code] || 500;
+    const status = statusMap[err.code] || 500;
     console.error(`[verifyPayment] ${err.code || 'ERROR'}: ${err.message}`);
     res.status(status).json({ error: err.message, code: err.code || 'INTERNAL_ERROR' });
   }
