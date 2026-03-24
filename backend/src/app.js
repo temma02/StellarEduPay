@@ -7,6 +7,7 @@ const studentRoutes = require('./routes/studentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const feeRoutes = require('./routes/feeRoutes');
 const { startPolling } = require('./services/transactionService');
+const { startRetryWorker } = require('./services/retryService');
 
 const app = express();
 
@@ -17,6 +18,7 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/stellaredup
   .then(() => {
     console.log('MongoDB connected');
     startPolling();
+    startRetryWorker();
   })
   .catch(err => console.error('MongoDB error:', err));
 
