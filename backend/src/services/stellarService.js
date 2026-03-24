@@ -313,6 +313,7 @@ async function finalizeConfirmedPayments() {
 module.exports = {
   syncPayments,
   verifyTransaction,
+  recordPayment,
   validatePaymentAgainstFee,
   detectMemoCollision,
   detectAsset,
