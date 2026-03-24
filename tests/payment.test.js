@@ -22,6 +22,14 @@ jest.mock('../backend/src/models/paymentModel', () => ({
 jest.mock('../backend/src/models/feeStructureModel', () => ({
   create: jest.fn().mockResolvedValue({ className: '5A', feeAmount: 200, description: 'Class 5A fees', academicYear: '2026', isActive: true }),
   find: jest.fn().mockReturnValue({ sort: jest.fn().mockResolvedValue([
+jest.mock('../backend/src/models/paymentIntentModel', () => ({
+  create: jest.fn().mockResolvedValue({ studentId: 'STU001', amount: 200, memo: 'ABCD123', status: 'pending' }),
+  findOne: jest.fn().mockResolvedValue({ studentId: 'STU001', amount: 200, memo: 'ABCD123', status: 'pending' }),
+  findByIdAndUpdate: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('../backend/src/models/feeStructureModel', () => {
+  const mockFees = [
     { className: '5A', feeAmount: 200, description: 'Class 5A fees', academicYear: '2026', isActive: true },
     { className: '6B', feeAmount: 300, description: 'Class 6B fees', academicYear: '2026', isActive: true },
   ]) }),
@@ -47,9 +55,11 @@ jest.mock('../backend/src/services/stellarService', () => ({
     memo: 'STU001',
     amount: 200,
     feeAmount: 200,
+    hash: 'abc123', memo: 'ABCD123', amount: 200, expectedAmount: 200,
     feeValidation: { status: 'valid', message: 'Payment matches the required fee' },
     date: new Date().toISOString(),
   }),
+  recordPayment: jest.fn().mockResolvedValue({}),
 }));
 
 // ─── Full Payment Flow ────────────────────────────────────────────────────────
@@ -114,10 +124,27 @@ describe('Student API', () => {
     Student.findOne.mockResolvedValueOnce(null);
     const res = await request(app).get('/api/students/UNKNOWN');
     expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('hash', 'abc123');
+    expect(res.body).toHaveProperty('expectedAmount', 200);
+    expect(res.body.feeValidation).toHaveProperty('status', 'valid');
   });
 });
 
 // ─── Payment API ──────────────────────────────────────────────────────────────
+
+  test('POST /api/payments/verify records payment with confirmed status', async () => {
+    const { recordPayment } = require('../backend/src/services/stellarService');
+    await request(app).post('/api/payments/verify').send({ txHash: 'abc123' });
+    expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({ status: 'confirmed' }));
+  });
+
+  test('POST /api/payments/verify returns 409 for duplicate transaction', async () => {
+    const Payment = require('../backend/src/models/paymentModel');
+    Payment.findOne.mockResolvedValueOnce({ txHash: 'abc123' });
+    const res = await request(app).post('/api/payments/verify').send({ txHash: 'abc123' });
+    expect(res.status).toBe(409);
+    expect(res.body).toHaveProperty('code', 'DUPLICATE_TX');
+  });
 
 describe('Payment API', () => {
   test('POST /api/payments/sync — returns success', async () => {
@@ -155,6 +182,14 @@ describe('Fee Structure API', () => {
     expect(res.body).toHaveProperty('error');
   });
 
+  });
+
+  test('POST /api/fees — 400 when required fields missing', async () => {
+    const res = await request(app).post('/api/fees').send({ description: 'No class' });
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
   test('GET /api/fees — returns all fee structures', async () => {
     const res = await request(app).get('/api/fees');
     expect(res.status).toBe(200);
@@ -170,6 +205,23 @@ describe('Fee Structure API', () => {
 
   test('GET /api/fees/:className — 404 for unknown class', async () => {
     const res = await request(app).get('/api/fees/UNKNOWN');
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Payment Intent API', () => {
+  test('POST /api/payments/intent creates a payment intent', async () => {
+    const res = await request(app).post('/api/payments/intent').send({ studentId: 'STU001' });
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('memo');
+    expect(res.body).toHaveProperty('amount', 200);
+    expect(res.body).toHaveProperty('studentId', 'STU001');
+  });
+
+  test('POST /api/payments/intent returns 404 for unknown student', async () => {
+    const studentModel = require('../backend/src/models/studentModel');
+    studentModel.findOne.mockResolvedValueOnce(null);
+    const res = await request(app).post('/api/payments/intent').send({ studentId: 'UNKNOWN' });
     expect(res.status).toBe(404);
   });
 });
