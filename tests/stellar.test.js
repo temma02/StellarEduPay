@@ -17,6 +17,7 @@ jest.mock('../backend/src/config/stellarConfig', () => ({
             records: [{ type: 'payment', to: 'GTEST123', amount: '200.0' }],
           }),
         }),
+
       }),
     }),
   },
@@ -43,11 +44,11 @@ describe('stellarService', () => {
     await expect(syncPayments()).resolves.toBeUndefined();
   });
 
-  test('verifyTransaction returns payment details with intent validation', async () => {
+  test('verifyTransaction returns payment details with fee validation', async () => {
     const result = await verifyTransaction('abc123');
     expect(result).toMatchObject({
       hash: 'abc123',
-      memo: 'ABCD123',
+      memo: 'STU001',
       amount: 200,
       expectedAmount: 200,
     });
@@ -69,5 +70,9 @@ describe('validatePaymentAgainstFee', () => {
   test('returns overpaid when payment exceeds fee', () => {
     const result = validatePaymentAgainstFee(250, 200);
     expect(result.status).toBe('overpaid');
+  });
+
+  test('verifyTransaction rejects old transaction', async () => {
+    await expect(verifyTransaction('old_tx')).rejects.toThrow('Transaction is too old and cannot be processed.');
   });
 });

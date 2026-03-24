@@ -38,6 +38,9 @@ async function syncPayments() {
     const memo = tx.memo;
     if (!memo) continue;
 
+    // Reject outdated transactions
+    if (!isWithinTimeWindow(tx.created_at)) continue;
+
     const exists = await Payment.findOne({ txHash: tx.hash });
     if (exists) continue;
 
