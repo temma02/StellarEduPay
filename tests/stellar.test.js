@@ -1,4 +1,18 @@
-const { verifyTransaction, syncPayments, validatePaymentAgainstFee } = require('../backend/src/services/stellarService');
+const { verifyTransaction, syncPayments, validatePaymentAgainstFee, recordPayment } = require('../backend/src/services/stellarService');
+
+// Base mock transaction factory
+function makeTx(overrides = {}) {
+  return {
+    hash: 'abc123',
+    memo: 'STU001',
+    successful: true,
+    created_at: new Date().toISOString(),
+    operations: async () => ({
+      records: [{ type: 'payment', to: 'GTEST123', amount: '200.0000000', asset_type: 'native' }],
+    }),
+    ...overrides,
+  };
+}
 
 jest.mock('../backend/src/config/stellarConfig', () => ({
   SCHOOL_WALLET: 'GTEST123',
@@ -52,19 +66,18 @@ describe('stellarService', () => {
       amount: 200,
       expectedAmount: 200,
     });
-    expect(result.feeValidation).toHaveProperty('status', 'valid');
+    await expect(verifyTransaction('badasset')).rejects.toMatchObject({ code: 'UNSUPPORTED_ASSET' });
+    server.transactions = original;
   });
 });
 
 describe('validatePaymentAgainstFee', () => {
   test('returns valid when payment matches fee', () => {
-    const result = validatePaymentAgainstFee(200, 200);
-    expect(result.status).toBe('valid');
+    expect(validatePaymentAgainstFee(200, 200).status).toBe('valid');
   });
 
   test('returns underpaid when payment is less than fee', () => {
-    const result = validatePaymentAgainstFee(150, 200);
-    expect(result.status).toBe('underpaid');
+    expect(validatePaymentAgainstFee(150, 200).status).toBe('underpaid');
   });
 
   test('returns overpaid when payment exceeds fee', () => {

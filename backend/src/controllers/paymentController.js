@@ -51,16 +51,42 @@ async function createPaymentIntent(req, res) {
 async function verifyPayment(req, res) {
   try {
     const { txHash } = req.body;
-    const result = await verifyTransaction(txHash);
-    if (!result) return res.status(404).json({ error: 'Payment not found or invalid' });
-    if (result.error === 'unsupported_asset') {
-      return res.status(400).json({
-        error: `Unsupported asset: ${result.assetCode}. Accepted assets: ${Object.keys(ACCEPTED_ASSETS).join(', ')}`,
+    if (!txHash) return res.status(400).json({ error: 'txHash is required' });
+
+    // Reject duplicates before hitting the Stellar network
+    const existing = await Payment.findOne({ txHash });
+    if (existing) {
+      return res.status(409).json({
+        error: `Transaction ${txHash} has already been processed`,
+        code: 'DUPLICATE_TX',
       });
     }
+
+    const result = await verifyTransaction(txHash);
+
+    // Persist the verified payment
+    await recordPayment({
+      studentId: result.memo,
+      txHash: result.hash,
+      amount: result.amount,
+      feeAmount: result.feeAmount,
+      feeValidationStatus: result.feeValidation.status,
+      memo: result.memo,
+      confirmedAt: new Date(result.date),
+    });
+
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const statusMap = {
+      TX_FAILED: 400,
+      MISSING_MEMO: 400,
+      INVALID_DESTINATION: 400,
+      UNSUPPORTED_ASSET: 400,
+      DUPLICATE_TX: 409,
+    };
+    const status = statusMap[err.code] || 500;
+    console.error(`[verifyPayment] ${err.code || 'ERROR'}: ${err.message}`);
+    res.status(status).json({ error: err.message, code: err.code || 'INTERNAL_ERROR' });
   }
 }
 

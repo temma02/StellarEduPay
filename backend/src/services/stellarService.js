@@ -48,9 +48,8 @@ async function syncPayments() {
     const payOp = ops.records.find(op => op.type === 'payment' && op.to === SCHOOL_WALLET);
     if (!payOp) continue;
 
-    // Detect asset type and reject unsupported assets
     const asset = detectAsset(payOp);
-    if (!asset) continue; // skip unsupported assets
+    if (!asset) continue;
 
     // Find the corresponding payment intent by memo
     const intent = await PaymentIntent.findOne({ memo, status: 'pending' });
@@ -84,14 +83,69 @@ async function syncPayments() {
   }
 }
 
+/**
+ * Persist a payment record, enforcing uniqueness on txHash.
+ * Returns the saved document, or throws DUPLICATE_TX if already recorded.
+ */
+async function recordPayment(data) {
+  const exists = await Payment.findOne({ txHash: data.txHash });
+  if (exists) {
+    const err = new Error(`Transaction ${data.txHash} has already been processed`);
+    err.code = 'DUPLICATE_TX';
+    throw err;
+  }
+  try {
+    return await Payment.create(data);
+  } catch (e) {
+    // Catch race-condition duplicate key errors from MongoDB
+    if (e.code === 11000) {
+      const err = new Error(`Transaction ${data.txHash} has already been processed`);
+      err.code = 'DUPLICATE_TX';
+      throw err;
+    }
+    throw e;
+  }
+}
+
 // Verify a single transaction hash against the school wallet
 async function verifyTransaction(txHash) {
   const tx = await server.transactions().transaction(txHash).call();
+
+  // 1. Validate transaction success status
+  if (tx.successful === false) {
+    const err = new Error('Transaction was not successful on the Stellar network');
+    err.code = 'TX_FAILED';
+    throw err;
+  }
+
+  // 2. Extract and validate memo (student ID)
+  const memo = tx.memo ? tx.memo.trim() : null;
+  if (!memo) {
+    const err = new Error('Transaction memo is missing or empty — cannot identify student');
+    err.code = 'MISSING_MEMO';
+    throw err;
+  }
+
+  // 3. Confirm a payment operation exists and destination matches school wallet
   const ops = await tx.operations();
   const payOp = ops.records.find(op => op.type === 'payment' && op.to === SCHOOL_WALLET);
-  if (!payOp) return null;
+  if (!payOp) {
+    const err = new Error(`No payment operation found targeting the school wallet (${SCHOOL_WALLET})`);
+    err.code = 'INVALID_DESTINATION';
+    throw err;
+  }
 
-  const amount = parseFloat(payOp.amount);
+  // 4. Validate asset type
+  const asset = detectAsset(payOp);
+  if (!asset) {
+    const assetCode = payOp.asset_type === 'native' ? 'XLM' : (payOp.asset_code || payOp.asset_type);
+    const err = new Error(`Unsupported asset: ${assetCode}`);
+    err.code = 'UNSUPPORTED_ASSET';
+    err.assetCode = assetCode;
+    throw err;
+  }
+
+  const amount = normalizeAmount(payOp.amount);
 
   // Find corresponding intent
   const intent = await PaymentIntent.findOne({ memo: tx.memo });
@@ -137,4 +191,4 @@ function validatePaymentAgainstFee(paymentAmount, expectedFee) {
   };
 }
 
-module.exports = { syncPayments, verifyTransaction, validatePaymentAgainstFee };
+module.exports = { syncPayments, verifyTransaction, validatePaymentAgainstFee, recordPayment };
