@@ -5,7 +5,7 @@ const feeStructureSchema = new mongoose.Schema({
   feeAmount: { type: Number, required: true },
   description: { type: String, default: '' },
   academicYear: { type: String, default: () => new Date().getFullYear().toString() },
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: true, index: true },
 }, { timestamps: true });
 
 module.exports = mongoose.model('FeeStructure', feeStructureSchema);

@@ -62,7 +62,6 @@ async function syncPayments() {
       amount: paymentAmount,
       feeAmount: student.feeAmount,
       feeValidationStatus: feeValidation.status,
-      memo,
       confirmedAt: new Date(tx.created_at),
     });
 
