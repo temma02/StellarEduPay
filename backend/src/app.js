@@ -47,6 +47,10 @@ mongoose.connect(config.MONGO_URI)
   })
   .catch(err => console.error('MongoDB error:', err));
 
+app.use('/api/v1/students', studentRoutes);
+app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/fees', feeRoutes);
+app.use('/api/v1/reports', reportRoutes);
 // Schools — no school context needed (these ARE schools)
 app.use('/api/schools',   schoolRoutes);
 
