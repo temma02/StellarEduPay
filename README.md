@@ -34,24 +34,32 @@ A decentralized school fee payment system built on the Stellar blockchain. Paren
 ```
 StellarEduPay/
 ├── backend/
+│   ├── .env.example                     # Required env vars template
 │   └── src/
-│       ├── app.js
-│       ├── config/stellarConfig.js      # Horizon server, accepted assets
-│       ├── controllers/
-│       ├── models/
-│       ├── routes/
+│       ├── app.js                       # Express app entry point
+│       ├── config/
+│       │   ├── index.js                 # Env var validation and export
+│       │   └── stellarConfig.js         # Horizon server, accepted assets
+│       ├── controllers/                 # Route handlers
+│       ├── middleware/
+│       │   ├── idempotency.js           # Idempotency-Key enforcement
+│       │   └── validate.js              # Request body/param validation
+│       ├── models/                      # Mongoose schemas
+│       ├── routes/                      # Express routers
 │       └── services/
-│           └── stellarService.js        # Ledger sync, tx verification, fee validation
+│           ├── stellarService.js        # Ledger sync, tx verification, fee validation
+│           └── transactionService.js    # Background polling
 ├── frontend/
+│   ├── .env.example
 │   └── src/
 │       ├── components/
 │       ├── pages/
-│       └── services/api.js
+│       └── services/api.js              # Axios API client
 ├── tests/
 │   ├── payment.test.js                  # API integration tests
 │   └── stellar.test.js                  # Stellar service unit tests
 ├── scripts/
-│   └── create-school-wallet.js
+│   └── create-school-wallet.js          # Keypair generator
 ├── docs/
 │   ├── architecture.md                  # System design and data flow
 │   ├── api-spec.md                      # Full API reference
@@ -66,9 +74,9 @@ StellarEduPay/
 | Layer | Technology |
 |---|---|
 | Blockchain | Stellar Network (Testnet / Mainnet) |
-| Backend | Node.js, Express, Mongoose |
-| Database | MongoDB |
-| Frontend | Next.js (React) |
+| Backend | Node.js 18+, Express, Mongoose |
+| Database | MongoDB 7 |
+| Frontend | Next.js 14 (React 18) |
 | Testing | Jest, Supertest |
 | DevOps | Docker, Docker Compose |
 
@@ -79,49 +87,75 @@ StellarEduPay/
 ### Prerequisites
 
 - Node.js 18+
-- MongoDB (local or [Atlas](https://www.mongodb.com/atlas))
-- A Stellar wallet — generate one at [Stellar Laboratory](https://laboratory.stellar.org) (use Friendbot to fund it on testnet)
+- MongoDB running locally or a [MongoDB Atlas](https://www.mongodb.com/atlas) connection string
+- A Stellar wallet — generate one with the script below
 
-### 1. Generate a school wallet
+### 1. Clone the repo
+
+```bash
+git clone <repo-url>
+cd StellarEduPay
+```
+
+### 2. Generate a school wallet
 
 ```bash
 node scripts/create-school-wallet.js
 ```
 
-Copy the **public key** — this is your `SCHOOL_WALLET_ADDRESS`. Never share the secret key.
+This prints a new Stellar keypair. Copy the **public key** — this is your `SCHOOL_WALLET_ADDRESS`. Keep the secret key offline; the backend never needs it.
 
-### 2. Configure environment variables
+To fund the wallet on testnet:
 
-**`backend/.env`**
+```bash
+curl "https://friendbot.stellar.org?addr=<YOUR_PUBLIC_KEY>"
 ```
+
+### 3. Configure environment variables
+
+**`backend/.env`** (copy from `backend/.env.example`):
+
+```env
 MONGO_URI=mongodb://localhost:27017/stellaredupay
 STELLAR_NETWORK=testnet
-SCHOOL_WALLET_ADDRESS=your_school_stellar_public_key
+SCHOOL_WALLET_ADDRESS=<your_stellar_public_key>
 PORT=5000
 ```
 
-**`frontend/.env.local`**
-```
+**`frontend/.env.local`** (copy from `frontend/.env.example`):
+
+```env
 NEXT_PUBLIC_API_URL=http://localhost:5000/api
 ```
 
-### 3. Run locally
+### 4. Install dependencies and run locally
 
 ```bash
 # Backend
-cd backend && npm install && npm run dev
+cd backend
+npm install
+npm run dev        # starts on http://localhost:5000
 
-# Frontend (separate terminal)
-cd frontend && npm install && npm run dev
+# Frontend — open a second terminal
+cd frontend
+npm install
+npm run dev        # starts on http://localhost:3000
 ```
 
-### 4. Run with Docker
+### 5. Run with Docker (alternative)
+
+Requires Docker and Docker Compose.
 
 ```bash
-SCHOOL_WALLET_ADDRESS=your_wallet_address docker-compose up
+SCHOOL_WALLET_ADDRESS=<your_public_key> docker-compose up
 ```
 
-### 5. Seed initial data (optional)
+Services started:
+- Backend → http://localhost:5000
+- Frontend → http://localhost:3000
+- MongoDB → localhost:27017
+
+### 6. Seed initial data (optional)
 
 ```bash
 # Create a fee structure for a class
@@ -129,47 +163,73 @@ curl -X POST http://localhost:5000/api/fees \
   -H "Content-Type: application/json" \
   -d '{"className": "5A", "feeAmount": 250, "academicYear": "2026"}'
 
-# Register a student
+# Register a student (fee auto-assigned from class structure)
 curl -X POST http://localhost:5000/api/students \
   -H "Content-Type: application/json" \
   -d '{"studentId": "STU001", "name": "Alice Johnson", "class": "5A"}'
+
+# Get payment instructions for the student
+curl http://localhost:5000/api/payments/instructions/STU001
+```
+
+### 7. Verify everything is running
+
+```bash
+curl http://localhost:5000/health
+# → {"status":"ok"}
 ```
 
 ---
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `MONGO_URI` | Yes | MongoDB connection string |
-| `STELLAR_NETWORK` | Yes | `testnet` or `mainnet` |
-| `SCHOOL_WALLET_ADDRESS` | Yes | School's Stellar public key |
-| `PORT` | No | Backend port (default: 5000) |
-| `NEXT_PUBLIC_API_URL` | Yes (frontend) | Backend API base URL |
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MONGO_URI` | Yes | — | MongoDB connection string |
+| `SCHOOL_WALLET_ADDRESS` | Yes | — | School's Stellar public key |
+| `STELLAR_NETWORK` | No | `testnet` | `testnet` or `mainnet` |
+| `PORT` | No | `5000` | Backend HTTP port |
+| `HORIZON_URL` | No | Auto-selected | Override Stellar Horizon API URL |
+| `USDC_ISSUER` | No | Auto-selected | USDC issuer address (testnet/mainnet defaults applied) |
+| `CONFIRMATION_THRESHOLD` | No | `2` | Ledger confirmations required before finalizing a payment |
+| `POLL_INTERVAL_MS` | No | `30000` | Background sync interval in milliseconds |
+| `NEXT_PUBLIC_API_URL` | Yes (frontend) | — | Backend API base URL |
 
 ---
 
 ## API Reference
 
+> POST endpoints that create records require an `Idempotency-Key` header (any unique string, e.g. a UUID). See [docs/api-spec.md](docs/api-spec.md) for details.
+
 | Method | Endpoint | Description |
 |---|---|---|
+| GET | `/health` | Health check |
 | POST | `/api/students` | Register a student |
 | GET | `/api/students` | List all students |
 | GET | `/api/students/:studentId` | Get a student |
 | POST | `/api/fees` | Create / update a fee structure |
 | GET | `/api/fees` | List all fee structures |
 | GET | `/api/fees/:className` | Get fee for a class |
+| DELETE | `/api/fees/:className` | Deactivate a fee structure |
 | GET | `/api/payments/instructions/:studentId` | Get wallet address + memo |
-| POST | `/api/payments/verify` | Verify a transaction by hash |
+| GET | `/api/payments/accepted-assets` | List accepted assets (XLM, USDC) |
+| POST | `/api/payments/intent` | Create a payment intent *(requires Idempotency-Key)* |
+| POST | `/api/payments/verify` | Verify a transaction by hash *(requires Idempotency-Key)* |
 | POST | `/api/payments/sync` | Sync latest payments from ledger |
-| GET | `/api/payments/:studentId` | Get payment history |
-| GET | `/api/payments/accepted-assets` | List accepted assets |
+| POST | `/api/payments/finalize` | Finalize pending confirmed payments |
+| GET | `/api/payments/:studentId` | Get payment history for a student |
+| GET | `/api/payments/balance/:studentId` | Get student's cumulative balance |
+| GET | `/api/payments/overpayments` | List all overpaid transactions |
+| GET | `/api/payments/suspicious` | List flagged suspicious payments |
+| GET | `/api/payments/pending` | List payments pending confirmation |
 
-See [`docs/api-spec.md`](docs/api-spec.md) for full request/response examples.
+See [docs/api-spec.md](docs/api-spec.md) for full request/response examples.
 
 ---
 
 ## Running Tests
+
+Tests mock both the Stellar SDK and MongoDB — no real network or database required.
 
 ```bash
 # From the project root
@@ -178,6 +238,7 @@ npm test
 ```
 
 Expected output:
+
 ```
 PASS tests/stellar.test.js
 PASS tests/payment.test.js
@@ -186,11 +247,9 @@ Test Suites: 2 passed, 2 total
 Tests:       33 passed, 33 total
 ```
 
-Tests cover:
-- **`stellar.test.js`** — unit tests for `stellarService`: asset detection, fee validation, amount normalization, transaction verification, ledger sync
-- **`payment.test.js`** — API integration tests: full payment flow (register → instructions → verify → history), all endpoints, edge cases
-
-All tests mock the Stellar SDK and MongoDB — no real network or database required.
+**Test coverage:**
+- `stellar.test.js` — unit tests for `stellarService`: asset detection, fee validation, amount normalization, transaction verification, sync
+- `payment.test.js` — API integration tests: full payment flow, all endpoints, idempotency, error handling
 
 ---
 
@@ -198,9 +257,9 @@ All tests mock the Stellar SDK and MongoDB — no real network or database requi
 
 | Doc | Description |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | System design, component overview, data flow |
-| [`docs/api-spec.md`](docs/api-spec.md) | Full API reference with request/response examples |
-| [`docs/stellar-integration.md`](docs/stellar-integration.md) | Memo field, accepted assets, fee validation, testnet setup |
+| [docs/architecture.md](docs/architecture.md) | System design, component overview, data flow |
+| [docs/api-spec.md](docs/api-spec.md) | Full API reference with request/response examples |
+| [docs/stellar-integration.md](docs/stellar-integration.md) | Memo field, accepted assets, fee validation, testnet setup |
 
 ---
 

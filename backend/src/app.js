@@ -2,24 +2,15 @@ require('dotenv').config();
 const config = require('./config');
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 
 const studentRoutes = require('./routes/studentRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const feeRoutes = require('./routes/feeRoutes');
-const { startPolling } = require('./services/transactionService');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
-mongoose.connect(config.MONGO_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    startPolling();
-  })
-  .catch(err => console.error('MongoDB error:', err));
 
 app.use('/api/students', studentRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -45,7 +36,19 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   res.status(status).json({ error: err.message, code: err.code || 'INTERNAL_ERROR' });
 });
 
-const PORT = config.PORT;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Only bind the port and connect to DB when run directly (not when required by tests)
+if (require.main === module) {
+  const mongoose = require('mongoose');
+  const { startPolling } = require('./services/transactionService');
+
+  mongoose.connect(config.MONGO_URI)
+    .then(() => {
+      console.log('MongoDB connected');
+      startPolling();
+    })
+    .catch(err => console.error('MongoDB error:', err));
+
+  app.listen(config.PORT, () => console.log(`Server running on port ${config.PORT}`));
+}
 
 module.exports = app;
