@@ -5,8 +5,10 @@ const Payment = require('../models/paymentModel');
 const Student = require('../models/studentModel');
 const PaymentIntent = require('../models/paymentIntentModel');
 const { validatePaymentAmount } = require('../utils/paymentLimits');
+const SystemConfig = require('../models/systemConfigModel');
 const { generateReferenceCode } = require('../utils/generateReferenceCode');
 const logger = require('../utils/logger').child('StellarService');
+const StellarSdk = require('@stellar/stellar-sdk');
 
 function detectAsset(payOp) {
   const assetType = payOp.asset_type;
@@ -171,13 +173,6 @@ async function recordPayment(data) {
   }
 }
 
-async function verifyTransaction(txHash) {
-  const tx = await server.transactions().transaction(txHash).call();
-  const valid = await extractValidPayment(tx);
-  if (!valid) return null;
-
-  const { payOp, memo, asset } = valid;
-  const amount = normalizeAmount(payOp.amount);
 
 /**
  * Verify a single transaction hash against a specific school wallet.
@@ -459,6 +454,26 @@ async function recordPayment(data) {
   }
 }
 
+async function getNextSequenceNumber(publicKey) {
+  let config = await SystemConfig.findOne({ key: `seq_${publicKey}` });
+  let nextSequence;
+
+  if (config && config.value) {
+    nextSequence = (BigInt(config.value) + 1n).toString();
+  } else {
+    const account = await server.loadAccount(publicKey);
+    nextSequence = (BigInt(account.sequenceNumber()) + 1n).toString();
+  }
+  
+  await SystemConfig.findOneAndUpdate(
+    { key: `seq_${publicKey}` },
+    { value: nextSequence },
+    { upsert: true }
+  );
+  
+  return nextSequence;
+}
+
 module.exports = {
   syncPaymentsForSchool,
   verifyTransaction,
@@ -471,4 +486,5 @@ module.exports = {
   finalizeConfirmedPayments,
   checkConfirmationStatus,
   recordPayment,
+  getNextSequenceNumber
 };
