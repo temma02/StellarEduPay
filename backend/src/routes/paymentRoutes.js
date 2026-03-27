@@ -9,6 +9,7 @@ const {
   submitTransaction,
   verifyTransactionHash,
   syncAllPayments,
+  getSyncStatus,
   finalizePayments,
   getStudentPayments,
   getAcceptedAssets,
@@ -51,6 +52,7 @@ router.use(resolveSchool);
 router.get('/',                              getAllPayments);
 router.get('/accepted-assets',               getAcceptedAssets);
 router.get('/limits',                        getPaymentLimitsEndpoint);
+router.get('/sync/status',                   getSyncStatus);
 router.get('/events',                        streamPaymentEvents);
 router.get('/overpayments',                  getOverpayments);
 router.get('/suspicious',                    getSuspiciousPayments);
