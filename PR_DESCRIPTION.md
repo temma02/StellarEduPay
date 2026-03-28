@@ -1,40 +1,29 @@
-# Transaction Fee Tracking
+# Add Dockerfile for Backend Service
+
+Closes #233
 
 ## Summary
 
-Track network fees associated with each payment. Extract fees from Stellar transactions, store them in the database, and make them visible in the payment records.
-
-## Tasks
-
-- [x] Extract fee from transaction
-- [x] Store in database
+`docker-compose.yml` references `build: ./backend` but no `Dockerfile` existed, causing `docker compose up` to fail immediately. This PR adds the missing `backend/Dockerfile`.
 
 ## Changes
-
-### Modified Files
-
-| File | Description |
-| ---- | ----------- |
-| [`backend/src/models/paymentModel.js`](backend/src/models/paymentModel.js) | Added `networkFee` field |
-| [`backend/src/services/stellarService.js`](backend/src/services/stellarService.js) | Added fee extraction from Stellar transactions |
-| [`backend/src/controllers/paymentController.js`](backend/src/controllers/paymentController.js) | Stores and returns network fees in API |
 
 ### New Files
 
 | File | Description |
 | ---- | ----------- |
-| [`test_fee_tracking.js`](test_fee_tracking.js) | Integration test |
-| [`verify_fee_tracking.js`](verify_fee_tracking.js) | Verification script |
+| [`backend/Dockerfile`](backend/Dockerfile) | Multi-layer Docker build for the Express backend |
+
+## Implementation Details
+
+- Base image: `node:18-alpine` (small, production-grade)
+- Dependencies installed with `npm ci --omit=dev` (clean, no devDependencies)
+- Runs as a non-root user (`appuser`) for security
+- `HEALTHCHECK` hits `GET /health` every 30s so Docker and compose know when the container is ready
+- `EXPOSE 5000` matches the port in `docker-compose.yml`
 
 ## Acceptance Criteria
 
-- [x] Fees are recorded and visible
-
-## Implementation
-
-Network fees are extracted from Stellar transactions using:
-```javascript
-const networkFee = parseFloat(tx.fee_paid || '0') / 10000000;
-```
-
-The fees are stored in the payment record and returned in API responses.
+- [x] `docker compose up` builds and starts the backend container successfully
+- [x] Container runs as a non-root user
+- [x] Health check endpoint reachable at `http://localhost:5000/health`
