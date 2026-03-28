@@ -1,10 +1,10 @@
-# PaymentForm: Show Payment History After Lookup
+# Write Architecture Documentation
 
-Closes #229
+Closes #228
 
 ## Summary
 
-After a parent looked up a student, they saw payment instructions but no history of past payments. `GET /api/payments/:studentId` existed but was never called from the frontend. This PR wires it up and renders results using the existing `TransactionCard` component.
+`docs/architecture.md` had only a brief stub. This PR rewrites it as a complete reference for new contributors covering every major component and their interactions.
 # Add Dockerfile for Frontend Service
 
 Closes #235
@@ -19,27 +19,20 @@ Closes #235
 
 | File | Description |
 | ---- | ----------- |
-| [`frontend/src/components/PaymentForm.jsx`](frontend/src/components/PaymentForm.jsx) | Fetches payment history in `handleSubmit`, renders it below instructions |
+| [`docs/architecture.md`](docs/architecture.md) | Full rewrite — diagrams, data flow, service roles, schema relationships |
 
-## Implementation
+## What's Documented
 
-`getStudentPayments` is added to the existing `Promise.all` in `handleSubmit` so all three requests fire in parallel — no extra loading time:
-
-```js
-const [stuRes, instrRes, paymentsRes] = await Promise.all([
-  getStudent(studentId),
-  getPaymentInstructions(studentId),
-  getStudentPayments(studentId),
-]);
-```
-
-Results are rendered with `<TransactionCard />`. An empty array shows "No payments recorded yet."
-
-## Acceptance Criteria
-
-- [x] Payment history is displayed after a successful student lookup
-- [x] Each payment shows hash, amount, and date
-- [x] Empty state is handled gracefully
+- High-level ASCII component diagram (browser → frontend → backend → MongoDB + Stellar)
+- File-level component map for both frontend and backend
+- Step-by-step data flow from fee setup through payment confirmation (5 steps with code paths)
+- Role of every backend service: `stellarService`, `transactionService`, `retryService`, `consistencyService`, `reminderService`
+- All controllers and their route ownership
+- All middleware and their purpose
+- MongoDB schema relationships with an ERD-style ASCII diagram and key constraints
+- Background worker table (interval, purpose, start function)
+- Multi-school tenancy model
+- Error handling and resilience patterns (retry, circuit breaker, idempotency, graceful shutdown)
 | [`frontend/Dockerfile`](frontend/Dockerfile) | Multi-stage Docker build for the Next.js frontend |
 | [`frontend/next.config.js`](frontend/next.config.js) | Enables `output: 'standalone'` required by the Docker runner stage |
 
@@ -65,6 +58,9 @@ Results are rendered with `<TransactionCard />`. An empty array shows "No paymen
 
 ## Implementation Details
 
+- [x] A new developer can understand the full system architecture from this document
+- [x] Data flow from payment initiation to confirmation is clearly described
+- [x] All major components and their interactions are covered
 - Two-stage build: `builder` compiles the Next.js app, `runner` serves only the standalone output (smaller final image)
 - `NEXT_PUBLIC_API_URL` is passed as a `ARG`/`ENV` during the build stage — Next.js inlines `NEXT_PUBLIC_*` vars at compile time, so a runtime `environment:` entry alone is not sufficient
 - Runs as a non-root user (`appuser`) for security
