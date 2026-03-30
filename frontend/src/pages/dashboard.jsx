@@ -45,21 +45,23 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const fetchStudents = useCallback((p = page) => {
-    setStudentsLoading(true);
-    setError(null);
-    return getStudents(p, PAGE_SIZE)
-      .then(({ data }) => {
-        setStudents(data.students || []);
-        setTotal(data.total || 0);
-        setPages(data.pages || 1);
-      })
-      .catch((err) => {
-        setError("Failed to load students. Please try again.");
-        console.error(err);
-      })
-      .finally(() => setStudentsLoading(false));
-  }, [page]);
+  const fetchStudents = useCallback(
+    (p = page) => {
+      setLoading(true);
+      setError(null);
+      return getStudents(p, PAGE_SIZE)
+        .then(({ data }) => {
+          setLastSyncAt(data.lastSyncAt);
+          setError(null);
+        })
+        .catch((err) => {
+          setError("Failed to load sync status. Please try again.");
+          console.error(err);
+        })
+        .finally(() => setLoading(false));
+    },
+    [page],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSummary = useCallback(() => {
     setSummaryLoading(true);
@@ -219,25 +221,16 @@ export default function Dashboard() {
       `}</style>
 
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-          <h1 style={{ margin: 0, fontSize: "1.85rem" }}>School Management</h1>
-          <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button 
-              onClick={handleExportCSV}
-              className="btn-success"
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-              disabled={filtered.length === 0}
-            >
-              Export CSV
-            </button>
-            <button 
-              onClick={() => setShowForm(!showForm)}
-              style={{ padding: "0.6rem 1.2rem", background: "#3b82f6", color: "white", border: "none", borderRadius: 8, fontWeight: 600, cursor: "pointer" }}
-            >
-              {showForm ? "Cancel" : "Register Student"}
-            </button>
-            <SyncButton onSyncComplete={handleSyncComplete} lastSyncTime={lastSyncAt} />
-          </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <h1 style={{ margin: 0 }}>Admin Dashboard</h1>
+          <SyncButton onSyncComplete={handleSyncComplete} lastSyncTime={lastSyncAt} />
         </div>
 
         {/* Sync status alert */}
@@ -247,61 +240,36 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Registration Form */}
-        {showForm && (
-          <div className="form-overlay">
-            <h3 style={{ marginTop: 0, marginBottom: "1.25rem" }}>Register New Student</h3>
-            <form onSubmit={handleRegister}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Student ID (Optional)</label>
-                  <input 
-                    className="form-control"
-                    placeholder="Auto-generated if empty"
-                    value={formData.studentId}
-                    onChange={e => setFormData({...formData, studentId: e.target.value})}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input 
-                    className="form-control"
-                    required
-                    value={formData.name}
-                    onChange={e => setFormData({...formData, name: e.target.value})}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Class</label>
-                  <input 
-                    className="form-control"
-                    required
-                    placeholder="e.g. Grade 10"
-                    value={formData.class}
-                    onChange={e => setFormData({...formData, class: e.target.value})}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Fee Amount (XLM)</label>
-                  <input 
-                    className="form-control"
-                    type="number"
-                    step="0.0000001"
-                    placeholder="e.g. 50"
-                    value={formData.feeAmount}
-                    onChange={e => setFormData({...formData, feeAmount: e.target.value})}
-                  />
-                  <small style={{ color: "#888", fontSize: "0.75rem" }}>Leave empty to use class default</small>
-                </div>
-              </div>
-              {formError && <p style={{ color: "#ef4444", fontSize: "0.85rem", marginTop: "1rem" }}>{formError}</p>}
-              <div style={{ marginTop: "1.5rem", display: "flex", gap: "1rem" }}>
-                <button type="submit" disabled={formLoading} className="btn-primary">
-                  {formLoading ? "Registering..." : "Submit Registration"}
-                </button>
-                <button type="button" onClick={() => setShowForm(false)} className="btn-ghost">Close</button>
-              </div>
-            </form>
+        {/* Sync status */}
+        {loading ? (
+          <p style={{ fontSize: "0.85rem", color: "#888" }}>Loading sync status…</p>
+        ) : error ? (
+          <div
+            style={{
+              padding: "1rem",
+              background: "#ffebee",
+              borderRadius: 6,
+              border: "1px solid #ef5350",
+              marginBottom: "1rem",
+            }}
+          >
+            <p style={{ color: "#c62828", margin: "0 0 0.75rem 0" }} role="alert">
+              {error}
+            </p>
+            <button
+              onClick={handleRetry}
+              style={{
+                padding: "0.5rem 1rem",
+                background: "#ef5350",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontSize: "0.9rem",
+              }}
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -417,11 +385,11 @@ export default function Dashboard() {
 }
 
 const pageBtnStyle = {
-  padding: '0.4rem 0.9rem',
-  fontSize: '0.88rem',
-  background: '#1e293b',
-  color: '#fff',
-  border: 'none',
+  padding: "0.4rem 0.9rem",
+  fontSize: "0.88rem",
+  background: "#1a1a2e",
+  color: "#fff",
+  border: "none",
   borderRadius: 6,
-  cursor: 'pointer',
+  cursor: "pointer",
 };
