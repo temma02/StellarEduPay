@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { getStudent, getPaymentInstructions, getStudentPayments } from '../services/api';
+import { convertXlmToUsd } from '../services/currencyService';
 import TransactionCard from './TransactionCard';
 
 export default function PaymentForm() {
@@ -10,6 +11,7 @@ export default function PaymentForm() {
   const [error, setError]               = useState('');
   const [loading, setLoading]           = useState(false);
   const [copiedField, setCopiedField]   = useState(null);
+  const [fiatConversion, setFiatConversion] = useState(null);
   const errorRef = useRef(null);
 
   async function handleSubmit(e) {
@@ -47,6 +49,21 @@ export default function PaymentForm() {
   const rateTime = local?.rateTimestamp
     ? new Date(local.rateTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
+
+  // Fetch fiat conversion when fee amount is available
+  useEffect(() => {
+    async function fetchConversion() {
+      const feeAmount = instructions?.feeAmount ?? student?.feeAmount;
+      if (feeAmount) {
+        const conversion = await convertXlmToUsd(feeAmount);
+        setFiatConversion(conversion);
+      }
+    }
+    
+    if (student || instructions) {
+      fetchConversion();
+    }
+  }, [student, instructions]);
 
   return (
     <div className="container-sm">
@@ -91,21 +108,23 @@ export default function PaymentForm() {
           <p className="my-0-4">
             <strong>Required Fee:</strong>{' '}
             {instructions.feeAmount != null ? `${instructions.feeAmount} XLM` : `${student.feeAmount} XLM`}
-            {local && (
+            {fiatConversion?.usd && (
               <span className="ml-0-5 text-success">
-                ≈ {local.amount.toFixed(2)} {local.currency}
+                (~${fiatConversion.usd.toFixed(2)} USD)
               </span>
             )}
           </p>
 
-          {local && rateTime && (
-            <p className="mb-0-5 text-muted">
-              Rate as of {rateTime} · 1 XLM = {local.rate.toFixed(4)} {local.currency}
+          {fiatConversion?.usd && (
+            <p className="mb-0-5 text-muted" style={{ fontSize: '0.85rem' }}>
+              <em>Approximate rate: 1 XLM ≈ ${fiatConversion.rate.toFixed(4)} USD</em>
+              <br />
+              <small>Exchange rates are indicative and may vary. Actual value depends on market conditions.</small>
             </p>
           )}
-          {!local && instructions.feeAmount != null && (
+          {!fiatConversion?.usd && (
             <p className="mb-0-5 text-muted">
-              Local currency rate unavailable
+              <small>Fiat conversion rate unavailable</small>
             </p>
           )}
 
