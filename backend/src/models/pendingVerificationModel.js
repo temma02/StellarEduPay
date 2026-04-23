@@ -27,9 +27,14 @@ const pendingVerificationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Multi-school retry worker: filter by school, then find due items
 pendingVerificationSchema.index({ schoolId: 1, status: 1, nextRetryAt: 1 });
-// Retry worker: find pending items ready for retry
+// Retry worker: find pending items ready for retry (primary query path)
 pendingVerificationSchema.index({ status: 1, nextRetryAt: 1 });
+// Covers queries that filter on nextRetryAt + attempts (e.g. attempts < MAX)
+pendingVerificationSchema.index({ nextRetryAt: 1, attempts: 1 });
+// Covers schoolId-scoped queries on nextRetryAt without status filter
+pendingVerificationSchema.index({ schoolId: 1, nextRetryAt: 1 });
 
 module.exports = mongoose.model(
   "PendingVerification",
