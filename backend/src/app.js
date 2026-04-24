@@ -19,7 +19,7 @@ const receiptsRoutes = require('./routes/receiptsRoutes');
 const feeAdjustmentRoutes = require('./routes/feeAdjustmentRoutes');
 
 const { startPolling, stopPolling } = require('./services/transactionPollingService');
-const { startRetryWorker, stopRetryWorker, isRetryWorkerRunning } = require('./services/retryService');
+const retrySelector = require('./services/retryServiceSelector');
 const { startConsistencyScheduler } = require('./services/consistencyScheduler');
 const { startReminderScheduler, stopReminderScheduler } = require('./services/reminderService');
 const { startWorker: startTxQueueWorker, stopWorker: stopTxQueueWorker } = require('./services/transactionQueueService');
@@ -140,17 +140,22 @@ connectWithRetry().then(async () => {
 
   startPolling();
   startConsistencyScheduler();
-  startRetryWorker();
+  retrySelector.start();
   startTxQueueWorker();
   startReminderScheduler();
   startSessionCleanupScheduler();
 
-  try {
-    await initializeRetryQueue(app);
-    setupMonitoring(60000);
-    logger.info('All services initialized successfully');
-  } catch (error) {
-    logger.error('Failed to initialize retry queue system', { error: error.message });
+  // Only initialise BullMQ when Redis is configured
+  if (retrySelector.useBullMQ()) {
+    try {
+      await initializeRetryQueue(app);
+      setupMonitoring(60000);
+      logger.info('All services initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize retry queue system', { error: error.message });
+    }
+  } else {
+    logger.info('All services initialized successfully (MongoDB retry backend)');
   }
 });
 
@@ -165,13 +170,13 @@ async function shutdown(signal) {
   logger.info(`Received ${signal} signal — starting graceful shutdown`);
 
   stopPolling();
-  stopRetryWorker();
+  retrySelector.stop();
   stopTxQueueWorker();
   stopReminderScheduler();
   stopSessionCleanupScheduler();
 
   const deadline = Date.now() + 8_000;
-  while (isRetryWorkerRunning() && Date.now() < deadline) {
+  while (retrySelector.isRunning() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
